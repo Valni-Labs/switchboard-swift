@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 - 2026-07-07
+
+- `OpenAIResponsesAdapter` speaks the OpenAI Responses API (`POST /v1/responses`) natively: `input` items, `max_output_tokens`, `reasoning.effort`, function tools, `response.output_text.delta` / `response.function_call_arguments.*` streaming, and usage capture from `response.completed`.
+- `WireFormat.openAIResponses` (`openai-responses`) names the new transport; models tagged with it in the picker route through the new adapter.
+- `ReasoningEffort` (`minimal` / `low` / `medium` / `high`) is passed per-adapter; omitted from the request when unset.
+- **Breaking:** `Client.supportedProviders()` and `SupportedProvider` are removed. The picker model list (`Client.models()`) is the single source for what an account can reach; route on each model's `wire_format` instead.
+
 ## 0.2.0 - 2026-07-07
 
 - `Client.models()` returns the server-filtered picker model list (`PickerModel`), including each model's `wire_format`.

@@ -95,18 +95,6 @@ public final class Client: Sendable {
         }
     }
 
-    public func supportedProviders() async throws -> [SupportedProvider] {
-        let urlRequest = try buildURLRequest(path: "/v1/providers")
-        let (data, response) = try await performData(urlRequest)
-        try ensureSuccess(response: response, body: data)
-        do {
-            let envelope = try Self.jsonDecoder.decode(SupportedProvidersEnvelope.self, from: data)
-            return envelope.providers.map(SupportedProvider.init)
-        } catch {
-            throw SwitchboardError.decodingFailed(underlying: error)
-        }
-    }
-
     public func models() async throws -> [PickerModel] {
         let urlRequest = try buildURLRequest(path: "/v1/models")
         let (data, response) = try await performData(urlRequest)
@@ -177,10 +165,6 @@ public final class Client: Sendable {
         }
         let message = String(data: body, encoding: .utf8) ?? "Unparseable error body"
         throw SwitchboardError.serverError(status: status, code: nil, message: message, context: nil)
-    }
-
-    private struct SupportedProvidersEnvelope: Decodable {
-        let providers: [String]
     }
 
     private struct PickerModelsEnvelope: Decodable {
