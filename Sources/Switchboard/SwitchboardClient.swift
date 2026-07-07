@@ -95,18 +95,48 @@ public final class Client: Sendable {
         }
     }
 
+    public func supportedProviders() async throws -> [SupportedProvider] {
+        let urlRequest = try buildURLRequest(path: "/v1/providers")
+        let (data, response) = try await performData(urlRequest)
+        try ensureSuccess(response: response, body: data)
+        do {
+            let envelope = try Self.jsonDecoder.decode(SupportedProvidersEnvelope.self, from: data)
+            return envelope.providers.map(SupportedProvider.init)
+        } catch {
+            throw SwitchboardError.decodingFailed(underlying: error)
+        }
+    }
+
+    public func models() async throws -> [PickerModel] {
+        let urlRequest = try buildURLRequest(path: "/v1/models")
+        let (data, response) = try await performData(urlRequest)
+        try ensureSuccess(response: response, body: data)
+        do {
+            let envelope = try Self.jsonDecoder.decode(PickerModelsEnvelope.self, from: data)
+            return envelope.models
+        } catch {
+            throw SwitchboardError.decodingFailed(underlying: error)
+        }
+    }
+
     private func buildURLRequest<Body: Encodable>(path: String, body: Body) throws -> URLRequest {
-        guard !apiKey.isEmpty else { throw SwitchboardError.missingAPIKey }
-        let url = baseURL.appendingPathComponent(path.trimmingPrefix("/"))
-        var request = URLRequest(url: url)
+        var request = try buildURLRequest(path: path)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         do {
             request.httpBody = try Self.jsonEncoder.encode(body)
         } catch {
             throw SwitchboardError.encodingFailed(underlying: error)
         }
+        return request
+    }
+
+    private func buildURLRequest(path: String) throws -> URLRequest {
+        guard !apiKey.isEmpty else { throw SwitchboardError.missingAPIKey }
+        let url = baseURL.appendingPathComponent(path.trimmingPrefix("/"))
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         return request
     }
 
@@ -147,6 +177,14 @@ public final class Client: Sendable {
         }
         let message = String(data: body, encoding: .utf8) ?? "Unparseable error body"
         throw SwitchboardError.serverError(status: status, code: nil, message: message, context: nil)
+    }
+
+    private struct SupportedProvidersEnvelope: Decodable {
+        let providers: [String]
+    }
+
+    private struct PickerModelsEnvelope: Decodable {
+        let models: [PickerModel]
     }
 
     private struct ErrorEnvelope: Decodable {

@@ -89,6 +89,18 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
         }
     }
 
+    func testDeprecatedModelCodeMapsToModelUnavailable() {
+        let result = SwitchboardProvider.mapError(
+            status: 410,
+            envelope: envelope(code: "SWB-3005", error: "Model deprecated", model: "fixture-model-retired"),
+            rawBody: Data(),
+        )
+        guard case let .modelUnavailable(modelID) = result else {
+            return XCTFail("expected .modelUnavailable, got \(result)")
+        }
+        XCTAssertEqual(modelID, "fixture-model-retired")
+    }
+
     func testModelUnavailableCarriesNilWhenServerOmitsModel() {
         let result = SwitchboardProvider.mapError(
             status: 404,

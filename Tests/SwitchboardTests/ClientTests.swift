@@ -184,6 +184,103 @@ final class ClientTests: XCTestCase {
         }
     }
 
+    func testSupportedProvidersReturnsDecodedIdentifiers() async throws {
+        let stub = stubURLSession(
+            statusCode: 200,
+            body: """
+            {"providers":["anthropic","xai","openai"]}
+            """,
+        )
+        let client = Client(apiKey: "swb_test", urlSession: stub)
+        let providers = try await client.supportedProviders()
+        XCTAssertEqual(
+            providers,
+            [SupportedProvider("anthropic"), SupportedProvider("xai"), SupportedProvider("openai")],
+        )
+    }
+
+    func testSupportedProvidersSendsGETWithBearerAuthorizationHeader() async throws {
+        var captured: URLRequest?
+        let stub = stubURLSession(
+            statusCode: 200,
+            body: """
+            {"providers":[]}
+            """,
+            requestInspector: { captured = $0 },
+        )
+        let client = Client(
+            apiKey: "swb_abcdef",
+            baseURL: URL(string: "https://switchboard.example.com")!,
+            urlSession: stub,
+        )
+        _ = try await client.supportedProviders()
+        XCTAssertEqual(captured?.httpMethod, "GET")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer swb_abcdef")
+        XCTAssertEqual(captured?.url?.absoluteString, "https://switchboard.example.com/v1/providers")
+    }
+
+    func testSupportedProvidersThrowsServerErrorWithEnvelope() async {
+        let stub = stubURLSession(
+            statusCode: 401,
+            body: """
+            {"code":"SWB-1001","error":"Authentication required"}
+            """,
+        )
+        let client = Client(apiKey: "swb_test", urlSession: stub)
+        do {
+            _ = try await client.supportedProviders()
+            XCTFail("expected throw")
+        } catch let error as SwitchboardError {
+            switch error {
+            case .serverError(let status, let code, let message, _):
+                XCTAssertEqual(status, 401)
+                XCTAssertEqual(code, "SWB-1001")
+                XCTAssertEqual(message, "Authentication required")
+            default:
+                XCTFail("expected .serverError, got \(error)")
+            }
+        } catch {
+            XCTFail("unexpected error type: \(error)")
+        }
+    }
+
+    func testSupportedProvidersThrowsMissingAPIKey() async {
+        let stub = stubURLSession(statusCode: 200, body: """
+        {"providers":[]}
+        """)
+        let client = Client(apiKey: "", urlSession: stub)
+        do {
+            _ = try await client.supportedProviders()
+            XCTFail("expected throw")
+        } catch let error as SwitchboardError {
+            if case .missingAPIKey = error { } else {
+                XCTFail("expected .missingAPIKey, got \(error)")
+            }
+        } catch {
+            XCTFail("unexpected error type: \(error)")
+        }
+    }
+
+    func testSupportedProvidersThrowsDecodingFailedOnMalformedBody() async {
+        let stub = stubURLSession(
+            statusCode: 200,
+            body: """
+            {"unexpected":"shape"}
+            """,
+        )
+        let client = Client(apiKey: "swb_test", urlSession: stub)
+        do {
+            _ = try await client.supportedProviders()
+            XCTFail("expected throw")
+        } catch let error as SwitchboardError {
+            if case .decodingFailed = error { } else {
+                XCTFail("expected .decodingFailed, got \(error)")
+            }
+        } catch {
+            XCTFail("unexpected error type: \(error)")
+        }
+    }
+
     func testStreamChatCompletionsThrowsStreamTruncatedOnMissingDone() async {
         let stub = stubURLSession(
             statusCode: 200,

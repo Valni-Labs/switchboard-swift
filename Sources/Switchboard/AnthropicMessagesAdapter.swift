@@ -6,13 +6,14 @@ public final class AnthropicMessagesAdapter: RawGenerationProvider, @unchecked S
     public var endUserID: String?
 
     public let supportsVision: Bool
+    public let supportsTools: Bool
     public private(set) var lastUsage: GenerationUsage?
 
     public var contextLimits: ModelLimits {
         guard let window = configuredContextWindow else { return .remoteDefault }
         return ModelLimits(contextWindow: window, budgetTokens: ModelLimits.remoteDefault.budgetTokens)
     }
-    public var preferredToolCallMode: ToolCallMode { .native }
+    public var preferredToolCallMode: ToolCallMode { supportsTools ? .native : .prompt }
 
     public static let defaultBaseURL = URL(string: "https://switchboard.valni.app/v1")!
 
@@ -34,6 +35,7 @@ public final class AnthropicMessagesAdapter: RawGenerationProvider, @unchecked S
         endUserID: String? = nil,
         baseURL: URL = AnthropicMessagesAdapter.defaultBaseURL,
         supportsVision: Bool = false,
+        supportsTools: Bool = true,
         contextWindow: Int? = nil,
         urlSession: URLSession = .shared
     ) {
@@ -41,6 +43,7 @@ public final class AnthropicMessagesAdapter: RawGenerationProvider, @unchecked S
         self.apiKey = apiKey
         self.endUserID = endUserID
         self.supportsVision = supportsVision
+        self.supportsTools = supportsTools
         self.configuredContextWindow = contextWindow
         let hostURL = baseURL.lastPathComponent == "v1"
             ? baseURL.deletingLastPathComponent()

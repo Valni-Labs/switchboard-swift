@@ -217,7 +217,7 @@ public final class SwitchboardProvider: RawGenerationProvider, @unchecked Sendab
                 retryAfterSeconds: envelope.retryAfterSeconds,
             )
 
-        case "SWB-3001", "VALNI-3001", "SWB-5202":
+        case "SWB-3001", "SWB-3005", "VALNI-3001", "SWB-5202":
             return .modelUnavailable(modelID: envelope.model)
 
         case "SWB-5201", "SWB-5203", "SWB-5205":
