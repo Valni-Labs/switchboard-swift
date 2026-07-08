@@ -64,7 +64,7 @@ public final class InferenceProvider: RawGenerationProvider, @unchecked Sendable
                 } catch is CancellationError {
                     continuation.finish()
                 } catch let error as SwitchboardError {
-                    continuation.finish(throwing: SwitchboardProvider.translate(error))
+                    continuation.finish(throwing: ProviderErrorTranslation.translate(error))
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -102,7 +102,7 @@ public final class InferenceProvider: RawGenerationProvider, @unchecked Sendable
                 } catch is CancellationError {
                     continuation.finish()
                 } catch let error as SwitchboardError {
-                    continuation.finish(throwing: SwitchboardProvider.translate(error))
+                    continuation.finish(throwing: ProviderErrorTranslation.translate(error))
                 } catch {
                     continuation.finish(throwing: error)
                 }

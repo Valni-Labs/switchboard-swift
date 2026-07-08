@@ -91,7 +91,6 @@ The clients speak standard wire formats, so the same code can target infrastruct
 
 - `Client(apiKey:baseURL:)` accepts any base URL; Switchboard is only the default.
 - `GenericProvider` posts to any OpenAI-compatible `chat/completions` endpoint (vLLM, TGI, OpenAI) with your own key. For unauthenticated local servers pass an empty `apiKey`; the `Authorization` header is omitted.
-- `AnthropicMessagesAdapter` targets any endpoint speaking the Anthropic Messages shape.
 
 Calls to your own endpoints never touch Switchboard.
 

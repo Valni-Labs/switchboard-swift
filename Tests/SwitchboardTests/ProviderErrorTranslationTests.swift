@@ -5,7 +5,7 @@ import XCTest
 final class SwitchboardProviderErrorMappingTests: XCTestCase {
 
     func testFirebaseAuthFailureMapsToSessionExpired() {
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 401,
             envelope: envelope(code: "VALNI-1001", error: "Authentication required"),
             rawBody: Data(),
@@ -16,7 +16,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testSwitchboardAuthFailureMapsToBackendMisconfigured() {
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 401,
             envelope: envelope(code: "SWB-1001", error: "Authentication required"),
             rawBody: Data(),
@@ -30,7 +30,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
 
     func testRateLimitCodesMapToRateLimited() {
         for code in ["SWB-1003", "SWB-1004", "VALNI-1003", "SWB-5204"] {
-            let result = SwitchboardProvider.mapError(
+            let result = ProviderErrorTranslation.mapError(
                 status: 429,
                 envelope: envelope(code: code, error: "Too many requests"),
                 rawBody: Data(),
@@ -42,7 +42,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testCostCapExceededCarriesSpentCapAndRetryAfter() {
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 429,
             envelope: envelope(
                 code: "SWB-1005",
@@ -62,7 +62,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testCostCapExceededTolerantOfMissingContext() {
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 429,
             envelope: envelope(code: "SWB-1005", error: "Monthly cost cap exceeded"),
             rawBody: Data(),
@@ -77,7 +77,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
 
     func testModelUnavailableCodesCarryModelID() {
         for code in ["SWB-3001", "VALNI-3001", "SWB-5202"] {
-            let result = SwitchboardProvider.mapError(
+            let result = ProviderErrorTranslation.mapError(
                 status: 404,
                 envelope: envelope(code: code, error: "Unknown model", model: "fixture-model-unknown"),
                 rawBody: Data(),
@@ -90,7 +90,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testDeprecatedModelCodeMapsToModelUnavailable() {
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 410,
             envelope: envelope(code: "SWB-3005", error: "Model deprecated", model: "fixture-model-retired"),
             rawBody: Data(),
@@ -102,7 +102,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testModelUnavailableCarriesNilWhenServerOmitsModel() {
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 404,
             envelope: envelope(code: "SWB-3001", error: "Unknown model"),
             rawBody: Data(),
@@ -117,7 +117,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
 
     func testUpstreamProviderCodesMapToUpstreamUnavailable() {
         for code in ["SWB-5201", "SWB-5203", "SWB-5205"] {
-            let result = SwitchboardProvider.mapError(
+            let result = ProviderErrorTranslation.mapError(
                 status: 502,
                 envelope: envelope(code: code, error: "Upstream broken", provider: "anthropic"),
                 rawBody: Data(),
@@ -131,7 +131,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
 
     func testCatalogAndConfigCodesMapToBackendMisconfigured() {
         for code in ["SWB-5001", "SWB-5002", "SWB-5003", "SWB-5101"] {
-            let result = SwitchboardProvider.mapError(
+            let result = ProviderErrorTranslation.mapError(
                 status: 503,
                 envelope: envelope(code: code, error: "Backend issue"),
                 rawBody: Data(),
@@ -146,7 +146,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
 
     func testValidationCodesMapToRequestInvalid() {
         for code in ["SWB-2001", "SWB-2003", "VALNI-2001", "VALNI-2004"] {
-            let result = SwitchboardProvider.mapError(
+            let result = ProviderErrorTranslation.mapError(
                 status: 400,
                 envelope: envelope(code: code, error: "Bad request"),
                 rawBody: Data(),
@@ -159,7 +159,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testUnknownCodeMapsToServerError() {
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 418,
             envelope: envelope(code: "SWB-9999", error: "I'm a teapot"),
             rawBody: Data(),
@@ -174,7 +174,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
 
     func testMissingEnvelopeFallsBackToBodyPreview() {
         let body = Data("Cloudflare 1101: worker exception".utf8)
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 500,
             envelope: nil,
             rawBody: body,
@@ -188,7 +188,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testMissingEnvelopeWithEmptyBodyReportsEmptyBody() {
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 502,
             envelope: nil,
             rawBody: Data(),
@@ -201,7 +201,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
 
     func testMissingEnvelopeWithNonUTF8BodyDistinguishesFromEmpty() {
         let nonUTF8 = Data([0x80, 0x81, 0x82, 0xFF])
-        let result = SwitchboardProvider.mapError(
+        let result = ProviderErrorTranslation.mapError(
             status: 502,
             envelope: nil,
             rawBody: nonUTF8,
@@ -215,7 +215,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testTranslatePreservesMessageWhenSDKCouldNotParseEnvelope() {
-        let result = SwitchboardProvider.translate(
+        let result = ProviderErrorTranslation.translate(
             .serverError(
                 status: 502,
                 code: nil,
@@ -233,7 +233,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testTranslateDispatchesToMapErrorWhenCodePresent() {
-        let result = SwitchboardProvider.translate(
+        let result = ProviderErrorTranslation.translate(
             .serverError(
                 status: 429,
                 code: "SWB-1003",
@@ -247,7 +247,7 @@ final class SwitchboardProviderErrorMappingTests: XCTestCase {
     }
 
     func testTranslateMissingAPIKeyMapsToBackendMisconfigured() {
-        let result = SwitchboardProvider.translate(.missingAPIKey)
+        let result = ProviderErrorTranslation.translate(.missingAPIKey)
         guard case let .backendMisconfigured(code, _) = result else {
             return XCTFail("expected .backendMisconfigured, got \(result)")
         }

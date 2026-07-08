@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0 - 2026-07-08
+
+- **Breaking**: `AnthropicMessagesAdapter` and `OpenAIResponsesAdapter` are removed (deprecated in 0.5.0). Migrate to `InferenceProvider`: one constructor serves every model, with provider-specific capability via `Inference.Request.providerOptions`.
+- `SwitchboardProvider` is deprecated; `InferenceProvider` is the replacement. Its `SwitchboardError` → `ProviderError` translation moved to an internal home unchanged.
+
 ## 0.5.0 - 2026-07-08
 
 - New unified inference surface targeting `POST /v1/switchboard/inference`, the branded endpoint that serves every model in the picker: `Client.inference(_:)` and `Client.streamInference(_:)` with `Inference.Request` (unified core + `provider_options` verbatim passthrough + `include_native`), the `Inference.Frame` grammar (`textDelta`, `reasoningDelta`, `toolCall`, `usage`, `done`, `native`; unknown frame kinds are skipped, which is the forward-compatibility contract), and `Inference.Response` (completion shape with `nativeParts` carrying provider artifacts for multi-turn round-trips).
