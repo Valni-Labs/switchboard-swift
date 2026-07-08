@@ -168,6 +168,8 @@ public final class SwitchboardProvider: RawGenerationProvider, @unchecked Sendab
             return .backendMisconfigured(code: "SWB-1001", message: "Switchboard API key missing")
         case .streamTruncated:
             return .serverError(status: 0, code: nil, message: "Switchboard stream ended before a final completion was produced")
+        case .streamError(let code, let message, let detail):
+            return .serverError(status: 0, code: code, message: detail.map { "\(message) (\($0))" } ?? message)
         }
     }
 
@@ -235,7 +237,7 @@ public final class SwitchboardProvider: RawGenerationProvider, @unchecked Sendab
     }
 }
 
-private extension Chat.Message {
+extension Chat.Message {
     init(internal message: ChatMessage) {
         let role: Chat.Message.Role = switch message.role {
         case .system:    .system
@@ -251,7 +253,7 @@ private extension Chat.Message {
     }
 }
 
-private extension Chat.Message.Content.Part {
+extension Chat.Message.Content.Part {
     init(internal block: ContentBlock) {
         switch block {
         case .text(let text):
@@ -262,7 +264,7 @@ private extension Chat.Message.Content.Part {
     }
 }
 
-private extension Chat.Tool {
+extension Chat.Tool {
     init(internal schema: ToolSchema) {
         self.init(
             name: schema.name,

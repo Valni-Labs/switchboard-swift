@@ -7,6 +7,7 @@ public enum ReasoningEffort: String, Sendable, CaseIterable {
     case high
 }
 
+@available(*, deprecated, message: "Use InferenceProvider; every model is served through POST /v1/switchboard/inference.")
 public final class OpenAIResponsesAdapter: RawGenerationProvider, @unchecked Sendable {
     public let modelID: String
 

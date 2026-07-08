@@ -60,6 +60,31 @@ func streamSwitchboard(client: Client) async throws {
 
 The `user` field names the end user the request is attributed to for usage reporting. Register end users in the [platform portal](https://valni.ai/platform/account?tab=switchboard); balances are funded at the company level.
 
+## Unified inference
+
+`POST /v1/switchboard/inference` serves every model in the picker through one request shape and one stream grammar, regardless of which provider runs it. Provider-specific capabilities ride `providerOptions` verbatim; raw upstream payloads are observable via `includeNative` and `native` frames.
+
+```swift
+func streamUnified(client: Client) async throws {
+    let request = Inference.Request(
+        model: "claude-sonnet-4-6",
+        messages: [.user("Hello")],
+        maxTokens: 2048,
+        user: "end-user-id",
+        providerOptions: ["anthropic": ["thinking": .object(["type": .string("enabled"), "budget_tokens": .number(1024)])]],
+    )
+    for try await frame in client.streamInference(request) {
+        switch frame {
+        case .textDelta(let text): print(text, terminator: "")
+        case .toolCall(let id, let name, let argumentsJSON): print("tool:", id, name, argumentsJSON)
+        default: break
+        }
+    }
+}
+```
+
+Unknown frame kinds are skipped by the SDK, so new server-side frame types never break deployed clients. The chat-completions surface below keeps working but the unified surface is the recommended path.
+
 ## Bring your own endpoint
 
 The clients speak standard wire formats, so the same code can target infrastructure you run yourself:

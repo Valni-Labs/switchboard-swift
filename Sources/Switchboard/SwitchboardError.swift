@@ -14,6 +14,8 @@ public enum SwitchboardError: Error, LocalizedError, Sendable {
 
     case streamTruncated
 
+    case streamError(code: String, message: String, detail: String?)
+
     public var errorDescription: String? {
         switch self {
         case .serverError(let status, let code, let message, _):
@@ -31,6 +33,11 @@ public enum SwitchboardError: Error, LocalizedError, Sendable {
             return "Switchboard.Client was constructed with an empty API key."
         case .streamTruncated:
             return "Switchboard stream ended before a final completion was produced."
+        case .streamError(let code, let message, let detail):
+            if let detail {
+                return "Switchboard stream error \(code): \(message) (\(detail))"
+            }
+            return "Switchboard stream error \(code): \(message)"
         }
     }
 }

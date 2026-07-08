@@ -1,5 +1,6 @@
 import Foundation
 
+@available(*, deprecated, message: "Use InferenceProvider; every model is served through POST /v1/switchboard/inference.")
 public final class AnthropicMessagesAdapter: RawGenerationProvider, @unchecked Sendable {
     public let modelID: String
 

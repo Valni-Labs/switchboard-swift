@@ -4,7 +4,7 @@ import Foundation
 public final class Client: Sendable {
     public static let defaultBaseURL = URL(string: "https://switchboard.valni.app")!
 
-    private static let maxErrorBodyBytes = 64 * 1024
+    static let maxErrorBodyBytes = 64 * 1024
 
     private let apiKey: String
     private let baseURL: URL
@@ -107,7 +107,7 @@ public final class Client: Sendable {
         }
     }
 
-    private func buildURLRequest<Body: Encodable>(path: String, body: Body) throws -> URLRequest {
+    func buildURLRequest<Body: Encodable>(path: String, body: Body) throws -> URLRequest {
         var request = try buildURLRequest(path: path)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -119,7 +119,7 @@ public final class Client: Sendable {
         return request
     }
 
-    private func buildURLRequest(path: String) throws -> URLRequest {
+    func buildURLRequest(path: String) throws -> URLRequest {
         guard !apiKey.isEmpty else { throw SwitchboardError.missingAPIKey }
         let url = baseURL.appendingPathComponent(path.trimmingPrefix("/"))
         var request = URLRequest(url: url)
@@ -128,7 +128,7 @@ public final class Client: Sendable {
         return request
     }
 
-    private func performData(_ request: URLRequest) async throws -> (Data, URLResponse) {
+    func performData(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await urlSession.data(for: request)
         } catch {
@@ -136,7 +136,7 @@ public final class Client: Sendable {
         }
     }
 
-    private func performBytes(_ request: URLRequest) async throws -> (URLSession.AsyncBytes, URLResponse) {
+    func performBytes(_ request: URLRequest) async throws -> (URLSession.AsyncBytes, URLResponse) {
         do {
             return try await urlSession.bytes(for: request)
         } catch {
@@ -144,7 +144,7 @@ public final class Client: Sendable {
         }
     }
 
-    private func ensureSuccess(response: URLResponse, body: Data) throws {
+    func ensureSuccess(response: URLResponse, body: Data) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw SwitchboardError.serverError(status: 0, code: nil, message: "Response was not an HTTPURLResponse", context: nil)
         }

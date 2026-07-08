@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 - 2026-07-08
+
+- New unified inference surface targeting `POST /v1/switchboard/inference`, the branded endpoint that serves every model in the picker: `Client.inference(_:)` and `Client.streamInference(_:)` with `Inference.Request` (unified core + `provider_options` verbatim passthrough + `include_native`), the `Inference.Frame` grammar (`textDelta`, `reasoningDelta`, `toolCall`, `usage`, `done`, `native`; unknown frame kinds are skipped, which is the forward-compatibility contract), and `Inference.Response` (completion shape with `nativeParts` carrying provider artifacts for multi-turn round-trips).
+- `InferenceProvider`: a `RawGenerationProvider` over the unified surface, the drop-in replacement for the wire adapters.
+- `Inference.JSON`: public Codable JSON value type for `provider_options` and native payloads.
+- New `SwitchboardError.streamError(code:message:detail:)` for in-stream error frames. **Breaking** for exhaustive switches over `SwitchboardError`.
+- `AnthropicMessagesAdapter` and `OpenAIResponsesAdapter` are deprecated in favor of `InferenceProvider`; they keep working this release. `SwitchboardProvider` deprecation follows in a later release.
+- Namespaced reads: `GET /v1/switchboard/models`, `/v1/switchboard/balance`, `/v1/switchboard/providers` are the documented routes going forward.
+
 ## 0.4.0 - 2026-07-08
 
 - New `SwitchboardLocal` product: on-device inference with MLX behind the same streaming seam as the remote clients. Optional — `import Switchboard` alone still compiles nothing beyond Foundation.
