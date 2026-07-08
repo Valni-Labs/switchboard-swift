@@ -70,11 +70,35 @@ The clients speak standard wire formats, so the same code can target infrastruct
 
 Calls to your own endpoints never touch Switchboard.
 
+## On-device models
+
+`SwitchboardLocal` runs open-weight models on the Mac itself (MLX, Apple Silicon, macOS 14+). A local model plugs into the same streaming interface as the remote clients, so one code path serves both — and it works with no API key and no network.
+
+```swift
+import SwitchboardLocal
+
+@MainActor
+func runLocalModel() async throws {
+    let model = LocalModel(
+        huggingFaceRepoID: "mlx-community/Qwen2.5-3B-Instruct-4bit",
+        displayName: "Qwen 2.5 3B"
+    )
+    model.download()
+    while !model.state.isReady { try await Task.sleep(for: .milliseconds(250)) }
+    for try await chunk in model.provider.generateRaw(messages: [ChatMessage(role: .user, text: "Hello")]) {
+        if case .text(let piece) = chunk { print(piece, terminator: "") }
+    }
+}
+```
+
+`LocalModel.state` is `@Published` — bind it to UI for download progress and readiness instead of polling. Models download once to `Application Support/SwitchboardLocal/Models` and load from disk afterwards.
+
 ## Products
 
 | Product | What it is | Dependencies |
 |---|---|---|
 | `Switchboard` | Remote client and shared types. The SDK. | none |
+| `SwitchboardLocal` | On-device MLX inference (`LocalModel`). Optional. | mlx-swift, mlx-swift-lm, swift-transformers |
 
 ## License
 

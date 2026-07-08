@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 - 2026-07-08
+
+- New `SwitchboardLocal` product: on-device inference with MLX behind the same streaming seam as the remote clients. Optional — `import Switchboard` alone still compiles nothing beyond Foundation.
+- `LocalModel` is the single entry point: point it at a Hugging Face repo ID, observe its download/load state machine (`notDownloaded` → `downloading` → `downloaded` → `loading` → `ready`), and read tokens from its `provider` exactly as you would from a remote model. No API key required.
+- Storage defaults to `Application Support/SwitchboardLocal/Models`; override per model via `storageDirectory` and `directoryName`.
+- Requires Apple Silicon (MLX); macOS 14+.
+
 ## 0.3.0 - 2026-07-07
 
 - `OpenAIResponsesAdapter` speaks the OpenAI Responses API (`POST /v1/responses`) natively: `input` items, `max_output_tokens`, `reasoning.effort`, function tools, `response.output_text.delta` / `response.function_call_arguments.*` streaming, and usage capture from `response.completed`.
