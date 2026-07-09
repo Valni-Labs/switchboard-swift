@@ -1,18 +1,20 @@
 # Switchboard
 
+[![Release](https://img.shields.io/github/v/release/valni-labs/switchboard-swift?sort=semver)](https://github.com/valni-labs/switchboard-swift/releases) [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org) [![Platforms](https://img.shields.io/badge/platforms-macOS%2014%2B-blue.svg)](https://github.com/valni-labs/switchboard-swift)
+
 One API for every frontier model. This is the Swift SDK for [Switchboard](https://valni.ai/quickstart), the unified inference API.
 
-> **Alpha preview.** APIs may change between 0.x releases. The package reaches 1.0.0 when it is battle-tested.
+> **Pre-1.0.** APIs may still change between 0.x releases; the package reaches 1.0.0 once it is battle-tested.
 
 ## Install
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Benovi-Labs/switchboard-swift", from: "0.1.0")
+    .package(url: "https://github.com/valni-labs/switchboard-swift", from: "0.6.0")
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
-        .product(name: "Switchboard", package: "Switchboard"),
+        .product(name: "Switchboard", package: "switchboard-swift"),
     ])
 ]
 ```
@@ -21,7 +23,9 @@ The `Switchboard` product has no dependencies beyond Foundation.
 
 ## Quickstart
 
-Create a key at [valni.ai/platform](https://valni.ai/platform/account?tab=switchboard). Keys start with `swb_` and are shown once at mint. Keys are server credentials: keep them in your backend's environment, never in a shipped client.
+Create a key at [valni.ai/platform](https://valni.ai/platform/account/switchboard). Keys start with `swb_` and are shown once at mint. Keys are server credentials: keep them in your backend's environment, never in a shipped client.
+
+Every model in the catalog is served through one endpoint, `POST /v1/switchboard/inference`:
 
 ```swift
 import Switchboard
@@ -32,67 +36,37 @@ func askSwitchboard() async throws {
     }
     let client = Client(apiKey: apiKey)
 
-    let response = try await client.chatCompletions(Chat.Request(
-        model: "anthropic/claude-sonnet-4-5",
+    let response = try await client.inference(Inference.Request(
+        model: "claude-sonnet-5",
         messages: [
             .system("You are a senior Swift engineer."),
             .user("Write a one-liner that flattens [[Int]] into [Int]."),
         ],
         user: "end-user-id"
     ))
-    print(response)
+    print(response.choices.first?.message.content ?? "")
 }
 ```
 
-Streaming:
+Streaming yields `Inference.Frame` values (`textDelta`, `reasoningDelta`, `toolCall`, `usage`, `done`, `native`):
 
 ```swift
 func streamSwitchboard(client: Client) async throws {
-    for try await chunk in client.streamChatCompletions(Chat.Request(
-        model: "anthropic/claude-sonnet-4-5",
+    for try await frame in client.streamInference(Inference.Request(
+        model: "claude-sonnet-5",
         messages: [.user("Hello")],
         user: "end-user-id"
     )) {
-        print(chunk)
-    }
-}
-```
-
-The `user` field names the end user the request is attributed to for usage reporting. Register end users in the [platform portal](https://valni.ai/platform/account?tab=switchboard); balances are funded at the company level.
-
-## Unified inference
-
-`POST /v1/switchboard/inference` serves every model in the picker through one request shape and one stream grammar, regardless of which provider runs it. Provider-specific capabilities ride `providerOptions` verbatim; raw upstream payloads are observable via `includeNative` and `native` frames.
-
-```swift
-func streamUnified(client: Client) async throws {
-    let request = Inference.Request(
-        model: "claude-sonnet-4-6",
-        messages: [.user("Hello")],
-        maxTokens: 2048,
-        user: "end-user-id",
-        providerOptions: ["anthropic": ["thinking": .object(["type": .string("enabled"), "budget_tokens": .number(1024)])]],
-    )
-    for try await frame in client.streamInference(request) {
-        switch frame {
-        case .textDelta(let text): print(text, terminator: "")
-        case .toolCall(let id, let name, let argumentsJSON): print("tool:", id, name, argumentsJSON)
-        default: break
+        if case .textDelta(let text) = frame {
+            print(text, terminator: "")
         }
     }
 }
 ```
 
-Unknown frame kinds are skipped by the SDK, so new server-side frame types never break deployed clients. The chat-completions surface below keeps working but the unified surface is the recommended path.
+Model IDs are catalog IDs (`claude-sonnet-5`, `gpt-5.5`, `deepseek-v4-flash`, …); list the live catalog with `client.models()`. Provider-specific capability rides `Inference.Request.providerOptions` on the way in; pass `includeNative: true` to receive provider-native artifacts back as `native` frames.
 
-## Bring your own endpoint
-
-The clients speak standard wire formats, so the same code can target infrastructure you run yourself:
-
-- `Client(apiKey:baseURL:)` accepts any base URL; Switchboard is only the default.
-- `GenericProvider` posts to any OpenAI-compatible `chat/completions` endpoint (vLLM, TGI, OpenAI) with your own key. For unauthenticated local servers pass an empty `apiKey`; the `Authorization` header is omitted.
-
-Calls to your own endpoints never touch Switchboard.
+The `user` field names the end user the request is attributed to. Usage is reported per end user; billing always draws from your company balance. Register end users in the [platform portal](https://valni.ai/platform/account/switchboard) or provision them from your backend with an admin key.
 
 ## On-device models
 
@@ -122,7 +96,9 @@ func runLocalModel() async throws {
 | Product | What it is | Dependencies |
 |---|---|---|
 | `Switchboard` | Remote client and shared types. The SDK. | none |
-| `SwitchboardLocal` | On-device MLX inference (`LocalModel`). Optional. | mlx-swift, mlx-swift-lm, swift-transformers |
+| `SwitchboardLocal` | On-device inference: `LocalModel` downloads an open-weight model from Hugging Face, manages its lifecycle, and exposes a ready-to-use provider running on MLX. | mlx-swift, mlx-swift-lm, swift-transformers |
+
+Most integrations need only `Switchboard`. Add `SwitchboardLocal` when you want models running on the device itself.
 
 ## License
 
