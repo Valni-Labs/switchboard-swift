@@ -6,6 +6,20 @@ This is the Swift SDK for [Switchboard](https://valni.ai/quickstart): unified in
 
 > **Pre-1.0.** APIs may still change between 0.x releases; the package reaches 1.0.0 once it is battle-tested.
 
+## What Switchboard does
+
+Calling a model is the easy part. Serving inference to end users means running a whole column of jobs underneath that call, and Switchboard ships all of them behind one `swb_` key:
+
+1. **Move the request.** One endpoint for every model in the catalog. Linecard, the configuration layer, keeps each model's wire format, parameters, and current price up to date, so one normalized request always lands correctly and provider changes never become your migration.
+2. **Watch it.** Token counts and cost for every request, visible per end user in the platform portal as they happen.
+3. **Meter it.** Billing-grade cost per request, priced exactly as the provider bills it: cache writes, cache reads, and cached-prompt discounts included, committed to the ledger before the response returns.
+4. **Hold the money.** Prepaid credits draw down an append-only ledger where balance is always credits minus usage, auditable per line and enforced before the call, so spend can never run past what was funded.
+5. **Attribute it.** The `user` field lands every debit on that end user's ledger. Per-user economics are a query, not a data project.
+6. **Bill it.** Itemized per-end-user statements come from the same ledger the requests wrote, not from a second system you reconcile.
+7. **Settle it.** Every charge ties out against the provider's actual invoice on our side. The books close; you never reconcile anything.
+
+One fee, charged on credit top-ups. Everything above is included.
+
 ## Install
 
 ```swift
