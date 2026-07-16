@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/valni-labs/switchboard-swift?sort=semver)](https://github.com/valni-labs/switchboard-swift/releases) [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org) [![Platforms](https://img.shields.io/badge/platforms-macOS%2014%2B-blue.svg)](https://github.com/valni-labs/switchboard-swift)
 
-One API for every frontier model. This is the Swift SDK for [Switchboard](https://valni.ai/quickstart), the unified inference API.
+This is the Swift SDK for [Switchboard](https://valni.ai/quickstart): unified inference with per-end-user metering, spend controls, and billing built in.
 
 > **Pre-1.0.** APIs may still change between 0.x releases; the package reaches 1.0.0 once it is battle-tested.
 
@@ -64,7 +64,7 @@ func streamSwitchboard(client: Client) async throws {
 }
 ```
 
-Model IDs are catalog IDs (`claude-sonnet-5`, `gpt-5.5`, `deepseek-v4-flash`, …); list the live catalog with `client.models()`. Provider-specific capability rides `Inference.Request.providerOptions` on the way in; pass `includeNative: true` to receive provider-native artifacts back as `native` frames.
+Model IDs are catalog IDs (`claude-sonnet-5`, `gpt-5.5`, …); list the live catalog with `client.models()`. Provider-specific capability rides `Inference.Request.providerOptions` on the way in; pass `includeNative: true` to receive provider-native artifacts back as `native` frames.
 
 The `user` field names the end user the request is attributed to. Usage is reported per end user; billing always draws from your company balance. Register end users in the [platform portal](https://valni.ai/platform/account/switchboard) or provision them from your backend with an admin key.
 
