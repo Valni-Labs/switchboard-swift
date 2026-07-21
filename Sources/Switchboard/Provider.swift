@@ -1,8 +1,40 @@
 import Foundation
+import SwitchboardNative
 
 public protocol Provider: AnyObject {
     var isConfigured: Bool { get }
     var modelName: String { get }
+}
+
+public enum ToolCallMode: String, Sendable, Codable, CaseIterable {
+    @available(*, deprecated, message: "Native structured tool calling is the proven mode; pass .native. Tool-aware servers move the tool grammar out of text content into structured tool calls, which prompt-mode parsing never sees. Use .prompt only against an endpoint with no tool parser.")
+    case prompt
+    case native
+
+    public static var allCases: [ToolCallMode] { [DeprecatedToolCallMode.prompt, .native] }
+}
+
+package enum DeprecatedToolCallMode {
+    package static var prompt: ToolCallMode {
+        let source: DeprecatedToolCallModeSource.Type = PromptToolCallModeSource.self
+        return source.prompt
+    }
+}
+
+private protocol DeprecatedToolCallModeSource {
+    static var prompt: ToolCallMode { get }
+}
+
+private enum PromptToolCallModeSource: DeprecatedToolCallModeSource {
+    @available(*, deprecated)
+    static var prompt: ToolCallMode { .prompt }
+}
+
+public enum GenerationChunk: Sendable {
+    case text(String)
+    case reasoning(String)
+    case toolCall(id: String, name: String, argumentsJSON: String)
+    case paywall(PaywallEvent)
 }
 
 public protocol RawGenerationProvider: AnyObject {
@@ -14,32 +46,18 @@ public protocol RawGenerationProvider: AnyObject {
 
     var lastUsage: GenerationUsage? { get }
 
-    func generateRaw(messages: [ChatMessage]) -> AsyncThrowingStream<RawStreamChunk, Error>
-
-    func generateNative(
-        messages: [ChatMessage],
-        tools: [ToolSchema]
-    ) -> AsyncThrowingStream<NativeStreamChunk, Error>
+    func generate(_ body: RouterBody) -> AsyncThrowingStream<GenerationChunk, Error>
 
     func abort()
 }
 
 extension RawGenerationProvider {
     public var contextLimits: ModelLimits { .remoteDefault }
-    public var preferredToolCallMode: ToolCallMode { .prompt }
+    public var preferredToolCallMode: ToolCallMode { .native }
 
     public var supportsVision: Bool { false }
 
     public var lastUsage: GenerationUsage? { nil }
-
-    public func generateNative(
-        messages: [ChatMessage],
-        tools: [ToolSchema]
-    ) -> AsyncThrowingStream<NativeStreamChunk, Error> {
-        AsyncThrowingStream { continuation in
-            continuation.finish(throwing: NativeToolCallError.notSupported)
-        }
-    }
 
     public func abort() {}
 }
@@ -47,10 +65,19 @@ extension RawGenerationProvider {
 public struct GenerationUsage: Sendable, Equatable {
     public let inputTokens: Int
     public let outputTokens: Int
+    public let cacheCreationTokens: Int
+    public let cacheReadTokens: Int
 
-    public init(inputTokens: Int, outputTokens: Int) {
+    public init(
+        inputTokens: Int,
+        outputTokens: Int,
+        cacheCreationTokens: Int = 0,
+        cacheReadTokens: Int = 0
+    ) {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+        self.cacheCreationTokens = cacheCreationTokens
+        self.cacheReadTokens = cacheReadTokens
     }
 }
 
@@ -70,6 +97,7 @@ public enum GenerationError: LocalizedError {
 
 public enum ProviderError: LocalizedError {
     case notConfigured(String)
+    case missingEndUserID
     case unauthorized
     case sessionExpired
     case rateLimited
@@ -85,6 +113,8 @@ public enum ProviderError: LocalizedError {
         switch self {
         case .notConfigured(let message):
             return message
+        case .missingEndUserID:
+            return "An end-user id is required to construct a remote provider."
         case .unauthorized:
             return "Invalid API key."
         case .sessionExpired:

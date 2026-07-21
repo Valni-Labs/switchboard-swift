@@ -20,88 +20,37 @@ public final class Client: Sendable {
         self.urlSession = urlSession
     }
 
-    public func chatCompletions(_ request: Chat.Request) async throws -> Chat.Response {
-        let urlRequest = try buildURLRequest(path: "/v1/chat/completions", body: request)
+    public func usage(
+        endUserID: String? = nil,
+        since: Int? = nil,
+        until: Int? = nil,
+        limit: Int? = nil,
+        beforeAt: Int? = nil,
+        beforeID: Int? = nil,
+    ) async throws -> UsagePage {
+        var queryItems: [URLQueryItem] = []
+        if let endUserID { queryItems.append(URLQueryItem(name: "user_id", value: endUserID)) }
+        if let since { queryItems.append(URLQueryItem(name: "since", value: String(since))) }
+        if let until { queryItems.append(URLQueryItem(name: "until", value: String(until))) }
+        if let limit { queryItems.append(URLQueryItem(name: "limit", value: String(limit))) }
+        if let beforeAt { queryItems.append(URLQueryItem(name: "before_at", value: String(beforeAt))) }
+        if let beforeID { queryItems.append(URLQueryItem(name: "before_id", value: String(beforeID))) }
+        let urlRequest = try buildURLRequest(path: "/v1/switchboard/usage", queryItems: queryItems)
         let (data, response) = try await performData(urlRequest)
         try ensureSuccess(response: response, body: data)
         do {
-            return try Self.jsonDecoder.decode(Chat.Response.self, from: data)
+            return try Self.jsonDecoder.decode(UsagePage.self, from: data)
         } catch {
             throw SwitchboardError.decodingFailed(underlying: error)
         }
     }
 
-    public func streamChatCompletions(
-        _ request: Chat.Request,
-    ) -> AsyncThrowingStream<Chat.StreamChunk, Error> {
-        AsyncThrowingStream { continuation in
-            let streamingRequest = Chat.Request(
-                model: request.model,
-                messages: request.messages,
-                temperature: request.temperature,
-                maxTokens: request.maxTokens,
-                topP: request.topP,
-                stream: true,
-                stopSequences: request.stopSequences,
-                tools: request.tools,
-                user: request.user,
-            )
-
-            let task = Task {
-                do {
-                    let urlRequest = try self.buildURLRequest(path: "/v1/chat/completions", body: streamingRequest)
-                    let (bytes, response) = try await self.performBytes(urlRequest)
-                    if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                        var collected = Data()
-                        for try await byte in bytes {
-                            collected.append(byte)
-                            if collected.count > Self.maxErrorBodyBytes { break }
-                        }
-                        try self.ensureSuccess(response: response, body: collected)
-                    }
-                    var sawDone = false
-                    for try await line in bytes.lines {
-                        guard line.hasPrefix("data:") else { continue }
-                        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                        if payload.isEmpty { continue }
-                        if payload == "[DONE]" {
-                            sawDone = true
-                            break
-                        }
-                        guard let json = payload.data(using: .utf8) else { continue }
-                        do {
-                            let chunk = try Self.jsonDecoder.decode(Chat.StreamChunk.self, from: json)
-                            continuation.yield(chunk)
-                        } catch {
-                            continuation.finish(throwing: SwitchboardError.decodingFailed(underlying: error))
-                            return
-                        }
-                    }
-                    if !sawDone {
-                        continuation.finish(throwing: SwitchboardError.streamTruncated)
-                    } else {
-                        continuation.finish()
-                    }
-                } catch let error as SwitchboardError {
-                    continuation.finish(throwing: error)
-                } catch {
-                    continuation.finish(throwing: SwitchboardError.transportError(underlying: error))
-                }
-            }
-
-            continuation.onTermination = { @Sendable _ in
-                task.cancel()
-            }
-        }
-    }
-
-    public func models() async throws -> [PickerModel] {
+    public func models() async throws -> ModelsPage {
         let urlRequest = try buildURLRequest(path: "/v1/models")
         let (data, response) = try await performData(urlRequest)
         try ensureSuccess(response: response, body: data)
         do {
-            let envelope = try Self.jsonDecoder.decode(PickerModelsEnvelope.self, from: data)
-            return envelope.models
+            return try Self.jsonDecoder.decode(ModelsPage.self, from: data)
         } catch {
             throw SwitchboardError.decodingFailed(underlying: error)
         }
@@ -120,8 +69,22 @@ public final class Client: Sendable {
     }
 
     func buildURLRequest(path: String) throws -> URLRequest {
+        try buildURLRequest(path: path, queryItems: [])
+    }
+
+    func buildURLRequest(path: String, queryItems: [URLQueryItem]) throws -> URLRequest {
         guard !apiKey.isEmpty else { throw SwitchboardError.missingAPIKey }
-        let url = baseURL.appendingPathComponent(path.trimmingPrefix("/"))
+        var url = baseURL.appendingPathComponent(path.trimmingPrefix("/"))
+        if !queryItems.isEmpty {
+            guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+                throw SwitchboardError.encodingFailed(underlying: URLError(.badURL))
+            }
+            components.queryItems = queryItems
+            guard let urlWithQuery = components.url else {
+                throw SwitchboardError.encodingFailed(underlying: URLError(.badURL))
+            }
+            url = urlWithQuery
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -153,7 +116,7 @@ public final class Client: Sendable {
         if body.isEmpty {
             throw SwitchboardError.serverError(status: status, code: nil, message: "Empty response body", context: nil)
         }
-        if let envelope = try? Self.jsonDecoder.decode(ErrorEnvelope.self, from: body) {
+        if let envelope = try? Self.jsonDecoder.decode(ServerErrorEnvelope.self, from: body) {
             let context = ServerErrorContext(
                 model: envelope.model,
                 provider: envelope.provider,
@@ -165,20 +128,6 @@ public final class Client: Sendable {
         }
         let message = String(data: body, encoding: .utf8) ?? "Unparseable error body"
         throw SwitchboardError.serverError(status: status, code: nil, message: message, context: nil)
-    }
-
-    private struct PickerModelsEnvelope: Decodable {
-        let models: [PickerModel]
-    }
-
-    private struct ErrorEnvelope: Decodable {
-        let code: String
-        let error: String
-        let model: String?
-        let provider: String?
-        let spentMicros: Int?
-        let capMicros: Int?
-        let retryAfterSeconds: Int?
     }
 
     private static let jsonEncoder: JSONEncoder = {

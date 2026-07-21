@@ -20,12 +20,14 @@ enum ProviderErrorTranslation {
             return .serverError(status: 0, code: nil, message: "Switchboard stream ended before a final completion was produced")
         case .streamError(let code, let message, let detail):
             return .serverError(status: 0, code: code, message: detail.map { "\(message) (\($0))" } ?? message)
+        case .unsupportedKind(let kind):
+            return .requestInvalid(message: "Request kind \"\(kind)\" is not supported by this Switchboard SDK build.")
         }
     }
 
-    private static func envelope(from error: SwitchboardError) -> ErrorEnvelope? {
+    private static func envelope(from error: SwitchboardError) -> ServerErrorEnvelope? {
         guard case let .serverError(_, code, message, context) = error, let code else { return nil }
-        return ErrorEnvelope(
+        return ServerErrorEnvelope(
             code: code,
             error: message,
             model: context?.model,
@@ -38,7 +40,7 @@ enum ProviderErrorTranslation {
 
     static func mapError(
         status: Int,
-        envelope: ErrorEnvelope?,
+        envelope: ServerErrorEnvelope?,
         rawBody: Data,
     ) -> ProviderError {
         guard let envelope else {
@@ -87,7 +89,7 @@ enum ProviderErrorTranslation {
     }
 }
 
-internal struct ErrorEnvelope: Decodable {
+internal struct ServerErrorEnvelope: Decodable {
     let code: String
     let error: String
     let model: String?

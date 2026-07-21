@@ -24,7 +24,7 @@ One fee, charged on credit top-ups. Everything above is included.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/valni-labs/switchboard-swift", from: "0.6.0")
+    .package(url: "https://github.com/valni-labs/switchboard-swift", from: "0.13.0")
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
@@ -39,7 +39,7 @@ The `Switchboard` product has no dependencies beyond Foundation.
 
 Create a key at [valni.ai/platform](https://valni.ai/platform/account/switchboard). Keys start with `swb_` and are shown once at mint. Keys are server credentials: keep them in your backend's environment, never in a shipped client.
 
-Every model in the catalog is served through one endpoint, `POST /v1/switchboard/inference`:
+Every model in the catalog is served through one endpoint, `POST /v1/switchboard/inference`. Requests are provider-native: you write the model's own wire format (Anthropic Messages, OpenAI Chat, OpenAI Responses) inside a routing envelope, so nothing is translated and no provider capability is out of reach:
 
 ```swift
 import Switchboard
@@ -50,35 +50,52 @@ func askSwitchboard() async throws {
     }
     let client = Client(apiKey: apiKey)
 
-    let response = try await client.inference(Inference.Request(
-        model: "claude-sonnet-5",
-        messages: [
-            .system("You are a senior Swift engineer."),
-            .user("Write a one-liner that flattens [[Int]] into [Int]."),
-        ],
-        user: "end-user-id"
+    let response = try await client.inference(SwitchboardRouter(
+        userId: "end-user-id",
+        time: Date().ISO8601Format(),
+        idempotencyKey: UUID().uuidString,
+        kind: .anthropic(AnthropicMessagesRequest(
+            model: "claude-sonnet-5",
+            messages: [
+                AnthropicMessage(role: .user, content: .string("Write a one-liner that flattens [[Int]] into [Int]."))
+            ],
+            maxTokens: 1024,
+            system: .text("You are a senior Swift engineer.")
+        ))
     ))
-    print(response.choices.first?.message.content ?? "")
-}
-```
 
-Streaming yields `Inference.Frame` values (`textDelta`, `reasoningDelta`, `toolCall`, `usage`, `done`, `native`):
-
-```swift
-func streamSwitchboard(client: Client) async throws {
-    for try await frame in client.streamInference(Inference.Request(
-        model: "claude-sonnet-5",
-        messages: [.user("Hello")],
-        user: "end-user-id"
-    )) {
-        if case .textDelta(let text) = frame {
-            print(text, terminator: "")
+    if case .anthropic(let message) = response {
+        for block in message.content {
+            if case .text(let text) = block { print(text.text) }
         }
     }
 }
 ```
 
-Model IDs are catalog IDs (`claude-sonnet-5`, `gpt-5.5`, …); list the live catalog with `client.models()`. Provider-specific capability rides `Inference.Request.providerOptions` on the way in; pass `includeNative: true` to receive provider-native artifacts back as `native` frames.
+Streaming yields the provider's own stream events, decoded and typed:
+
+```swift
+func streamSwitchboard(client: Client) async throws {
+    let router = SwitchboardRouter(
+        userId: "end-user-id",
+        time: Date().ISO8601Format(),
+        idempotencyKey: UUID().uuidString,
+        kind: .anthropic(AnthropicMessagesRequest(
+            model: "claude-sonnet-5",
+            messages: [AnthropicMessage(role: .user, content: .string("Hello"))],
+            maxTokens: 1024
+        ))
+    )
+    for try await event in client.streamInference(router) {
+        if case .anthropic(.contentBlockDelta(let delta)) = event,
+           case .textDelta(let text) = delta.delta {
+            print(text.text, terminator: "")
+        }
+    }
+}
+```
+
+Model IDs are catalog IDs (`claude-sonnet-5`, `gpt-5.5`, …). `client.models()` returns the live catalog as kind-tagged records with current prices beside them; `page.composed()` joins each record with its price. The record's `kind` tells you which native request type the model speaks.
 
 The `user` field names the end user the request is attributed to. Usage is reported per end user; billing always draws from your company balance. Register end users in the [platform portal](https://valni.ai/platform/account/switchboard) or provision them from your backend with an admin key.
 
@@ -97,7 +114,13 @@ func runLocalModel() async throws {
     )
     model.download()
     while !model.state.isReady { try await Task.sleep(for: .milliseconds(250)) }
-    for try await chunk in model.provider.generateRaw(messages: [ChatMessage(role: .user, text: "Hello")]) {
+
+    let body = RouterBody.anthropic(AnthropicMessagesRequest(
+        model: model.displayName,
+        messages: [AnthropicMessage(role: .user, content: .string("Hello"))],
+        maxTokens: 512
+    ))
+    for try await chunk in model.provider.generate(body) {
         if case .text(let piece) = chunk { print(piece, terminator: "") }
     }
 }

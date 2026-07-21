@@ -263,7 +263,7 @@ private func envelope(
     spentMicros: Int? = nil,
     capMicros: Int? = nil,
     retryAfterSeconds: Int? = nil,
-) -> ErrorEnvelope {
+) -> ServerErrorEnvelope {
     let payload: [String: Any] = [
         "code": code,
         "error": error,
@@ -277,5 +277,5 @@ private func envelope(
         return value
     }
     let data = try! JSONSerialization.data(withJSONObject: payload)
-    return try! JSONDecoder().decode(ErrorEnvelope.self, from: data)
+    return try! JSONDecoder().decode(ServerErrorEnvelope.self, from: data)
 }

@@ -1,38 +1,46 @@
 import Foundation
+import SwitchboardNative
 
 extension Client {
     static let inferencePath = "/v1/switchboard/inference"
 
-    public func inference(_ request: Inference.Request) async throws -> Inference.Response {
-        let urlRequest = try buildURLRequest(path: Self.inferencePath, body: request)
+    public func inference(_ router: SwitchboardRouter) async throws -> NativeResponse {
+        let urlRequest = try buildURLRequest(path: Self.inferencePath, body: router)
         let (data, response) = try await performData(urlRequest)
         try ensureSuccess(response: response, body: data)
+        let decoder = JSONDecoder()
         do {
-            return try JSONDecoder().decode(Inference.Response.self, from: data)
+            switch router.kind {
+            case .anthropic:
+                return .anthropic(try decoder.decode(AnthropicMessageResponse.self, from: data))
+            case .openaiGeneric:
+                return .openaiGeneric(try decoder.decode(OpenAIChatResponse.self, from: data))
+            case .openaiPro:
+                return .openaiPro(try decoder.decode(OpenAIResponsesResponse.self, from: data))
+            case .google:
+                return .google(try decoder.decode(GoogleGenerateContentResponse.self, from: data))
+            case .unrecognized(let kind):
+                throw SwitchboardError.unsupportedKind(kind: kind)
+            }
+        } catch let error as SwitchboardError {
+            throw error
         } catch {
             throw SwitchboardError.decodingFailed(underlying: error)
         }
     }
 
-    public func streamInference(_ request: Inference.Request) -> AsyncThrowingStream<Inference.Frame, Error> {
+    public func streamInference(_ router: SwitchboardRouter) -> AsyncThrowingStream<NativeStreamEvent, Error> {
         AsyncThrowingStream { continuation in
-            let streamingRequest = Inference.Request(
-                model: request.model,
-                messages: request.messages,
-                temperature: request.temperature,
-                maxTokens: request.maxTokens,
-                topP: request.topP,
-                stream: true,
-                stopSequences: request.stopSequences,
-                tools: request.tools,
-                user: request.user,
-                providerOptions: request.providerOptions,
-                includeNative: request.includeNative,
+            let streamingRouter = SwitchboardRouter(
+                userId: router.userId,
+                time: router.time,
+                idempotencyKey: router.idempotencyKey,
+                kind: router.kind.streaming(),
             )
 
             let task = Task {
                 do {
-                    let urlRequest = try self.buildURLRequest(path: Self.inferencePath, body: streamingRequest)
+                    let urlRequest = try self.buildURLRequest(path: Self.inferencePath, body: streamingRouter)
                     let (bytes, response) = try await self.performBytes(urlRequest)
                     if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
                         var collected = Data()
@@ -42,33 +50,25 @@ extension Client {
                         }
                         try self.ensureSuccess(response: response, body: collected)
                     }
-                    var sawDone = false
                     let decoder = JSONDecoder()
                     for try await line in bytes.lines {
                         guard line.hasPrefix("data:") else { continue }
                         let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                        if payload.isEmpty { continue }
+                        if payload.isEmpty || payload == NativeStreamDecoding.doneSentinel { continue }
                         guard let json = payload.data(using: .utf8) else { continue }
-                        let frame: Inference.Frame?
+                        let event: NativeStreamEvent
                         do {
-                            frame = try Inference.Frame.parse(json, decoder: decoder)
+                            event = try NativeStreamDecoding.decodeEvent(for: streamingRouter.kind, payload: json, decoder: decoder)
+                        } catch let error as SwitchboardError {
+                            continuation.finish(throwing: error)
+                            return
                         } catch {
                             continuation.finish(throwing: SwitchboardError.decodingFailed(underlying: error))
                             return
                         }
-                        guard let frame else { continue }
-                        if case .error(let code, let message, let detail) = frame {
-                            continuation.finish(throwing: SwitchboardError.streamError(code: code, message: message, detail: detail))
-                            return
-                        }
-                        if case .done = frame { sawDone = true }
-                        continuation.yield(frame)
+                        continuation.yield(event)
                     }
-                    if !sawDone {
-                        continuation.finish(throwing: SwitchboardError.streamTruncated)
-                    } else {
-                        continuation.finish()
-                    }
+                    continuation.finish()
                 } catch let error as SwitchboardError {
                     continuation.finish(throwing: error)
                 } catch is CancellationError {

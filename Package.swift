@@ -14,11 +14,18 @@ let package = Package(
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.3"),
     ],
     targets: [
-        .target(name: "Switchboard"),
+        .target(name: "SwitchboardNative"),
+        .target(
+            name: "Switchboard",
+            dependencies: [
+                "SwitchboardNative",
+            ]
+        ),
         .target(
             name: "SwitchboardLocal",
             dependencies: [
                 "Switchboard",
+                "SwitchboardNative",
                 .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),

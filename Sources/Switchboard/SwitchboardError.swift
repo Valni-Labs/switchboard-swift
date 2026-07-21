@@ -16,6 +16,8 @@ public enum SwitchboardError: Error, LocalizedError, Sendable {
 
     case streamError(code: String, message: String, detail: String?)
 
+    case unsupportedKind(kind: String)
+
     public var errorDescription: String? {
         switch self {
         case .serverError(let status, let code, let message, _):
@@ -38,6 +40,8 @@ public enum SwitchboardError: Error, LocalizedError, Sendable {
                 return "Switchboard stream error \(code): \(message) (\(detail))"
             }
             return "Switchboard stream error \(code): \(message)"
+        case .unsupportedKind(let kind):
+            return "Request kind \"\(kind)\" is not supported by this Switchboard SDK build."
         }
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import Switchboard
+import SwitchboardNative
 import os
 import MLX
 import MLXLLM
@@ -15,6 +16,7 @@ public final class ModelProvider: Provider, RawGenerationProvider, @unchecked Se
     public let modelName: String
     public let inferenceConfig: InferenceConfig
     public let contextLimits: ModelLimits
+    public var preferredToolCallMode: ToolCallMode { DeprecatedToolCallMode.prompt }
     public var isConfigured: Bool { lock.withLock { _container != nil } }
 
     public init(
@@ -40,42 +42,49 @@ public final class ModelProvider: Provider, RawGenerationProvider, @unchecked Se
         task?.cancel()
     }
 
-    public func generateRaw(messages: [ChatMessage]) -> AsyncThrowingStream<RawStreamChunk, Error> {
+    public func generate(_ body: RouterBody) -> AsyncThrowingStream<GenerationChunk, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
-                if messages.contains(where: \.hasNonTextContent) {
-                    continuation.finish(throwing: RoutingError.imagesNotSupportedByModel(modelID: self.modelName))
+                let extraction: LocalPromptExtraction
+                do {
+                    extraction = try LocalPromptExtraction(body: body)
+                } catch {
+                    continuation.finish(throwing: error)
                     return
                 }
                 guard let resolvedContainer = self.lock.withLock({ self._container }) else {
                     continuation.finish(throwing: ProviderError.notConfigured("Model is not loaded."))
                     return
                 }
-                ValniLog.inference.debug("ModelProvider: generateRaw starting, messages=\(messages.count, privacy: .public)")
+                ValniLog.inference.debug("ModelProvider: generate starting, messages=\(extraction.messages.count, privacy: .public)")
                 do {
-                    let mlxMessages = messages.map { Self.dictFromTextOnlyMessage($0) }
+                    let parameters = GenerateParameters(
+                        maxTokens: extraction.maxTokens ?? inferenceConfig.maxTokens,
+                        temperature: extraction.temperature ?? inferenceConfig.temperature,
+                        topP: extraction.topP ?? inferenceConfig.topP,
+                        repetitionPenalty: inferenceConfig.repetitionPenalty,
+                        repetitionContextSize: inferenceConfig.repetitionContextSize,
+                    )
                     try await resolvedContainer.perform { ctx in
-                        let input = try await ctx.processor.prepare(input: UserInput(messages: mlxMessages))
-                        let stream = try MLXLMCommon.generate(
-                            input: input,
-                            parameters: GenerateParameters(maxTokens: inferenceConfig.maxTokens, temperature: inferenceConfig.temperature, topP: inferenceConfig.topP, repetitionPenalty: inferenceConfig.repetitionPenalty, repetitionContextSize: inferenceConfig.repetitionContextSize),
-                            context: ctx
-                        )
+                        let input = try await ctx.processor.prepare(input: UserInput(messages: extraction.messages))
+                        let stream = try MLXLMCommon.generate(input: input, parameters: parameters, context: ctx)
                         var tokenCount = 0
                         for try await item in stream {
                             switch item {
-                            case .chunk(let s):
+                            case .chunk(let text):
                                 tokenCount += 1
-                                continuation.yield(.text(s))
+                                continuation.yield(.text(text))
                             case .info(let info):
-                                ValniLog.inference.debug("ModelProvider: generateRaw finished prompt=\(info.promptTokenCount, privacy: .public) generated=\(info.generationTokenCount, privacy: .public) yielded=\(tokenCount, privacy: .public)")
+                                ValniLog.inference.debug("ModelProvider: generate finished prompt=\(info.promptTokenCount, privacy: .public) generated=\(info.generationTokenCount, privacy: .public) yielded=\(tokenCount, privacy: .public)")
                             case .toolCall(let toolCall):
-                                let args = toolCall.function.arguments.mapValues { $0.anyValue }
-                                if let argsData = try? JSONSerialization.data(withJSONObject: args),
-                                   let argsJSON = String(data: argsData, encoding: .utf8) {
-                                    let text = "<tool_call>{\"name\": \"\(toolCall.function.name)\", \"arguments\": \(argsJSON)}</tool_call>"
-                                    tokenCount += 1
-                                    continuation.yield(.text(text))
+                                let arguments = toolCall.function.arguments.mapValues { $0.anyValue }
+                                if let argumentsData = try? JSONSerialization.data(withJSONObject: arguments),
+                                   let argumentsJSON = String(data: argumentsData, encoding: .utf8) {
+                                    continuation.yield(.toolCall(
+                                        id: UUID().uuidString,
+                                        name: toolCall.function.name,
+                                        argumentsJSON: argumentsJSON,
+                                    ))
                                 } else {
                                     ValniLog.inference.error("ModelProvider: native toolCall serialization failed name=\(toolCall.function.name, privacy: .public)")
                                 }
@@ -85,25 +94,108 @@ public final class ModelProvider: Provider, RawGenerationProvider, @unchecked Se
                     GPU.clearCache()
                     continuation.finish()
                 } catch {
-                    ValniLog.inference.error("ModelProvider: generateRaw error \(error.localizedDescription, privacy: .public)")
+                    ValniLog.inference.error("ModelProvider: generate error \(error.localizedDescription, privacy: .public)")
                     continuation.finish(throwing: error)
                 }
             }
             self.lock.withLock { self._currentTask = task }
         }
     }
+}
 
-    private static func dictFromTextOnlyMessage(_ message: ChatMessage) -> [String: String] {
-        let text: String
-        switch message.content {
-        case .text(let s):
-            text = s
-        case .blocks(let blocks):
-            text = blocks.compactMap { block -> String? in
-                if case .text(let s) = block { return s }
+struct LocalPromptExtraction {
+    let messages: [[String: String]]
+    let maxTokens: Int?
+    let temperature: Float?
+    let topP: Float?
+
+    init(body: RouterBody) throws {
+        switch body {
+        case .anthropic(let request):
+            var extracted: [[String: String]] = []
+            if let system = request.system {
+                switch system {
+                case .text(let text):
+                    extracted.append(["role": "system", "content": text])
+                case .blocks(let blocks):
+                    let joined = blocks.map(\.text).joined(separator: "\n")
+                    if !joined.isEmpty { extracted.append(["role": "system", "content": joined]) }
+                }
+            }
+            for message in request.messages {
+                extracted.append(["role": message.role.rawValue, "content": Self.text(of: message.content)])
+            }
+            messages = extracted
+            maxTokens = Int(request.maxTokens)
+            temperature = request.temperature.map(Float.init)
+            topP = request.topP.map(Float.init)
+        case .openaiGeneric(let request):
+            messages = request.messages.map { message in
+                ["role": message.role.rawValue, "content": Self.text(of: message.content ?? .null)]
+            }
+            maxTokens = (request.maxCompletionTokens ?? request.maxTokens).map(Int.init)
+            temperature = request.temperature.map(Float.init)
+            topP = request.topP.map(Float.init)
+        case .openaiPro(let request):
+            var extracted: [[String: String]] = []
+            if let instructions = request.instructions {
+                extracted.append(["role": "system", "content": instructions])
+            }
+            switch request.input {
+            case .string(let text):
+                extracted.append(["role": "user", "content": text])
+            case .array(let items):
+                for item in items {
+                    guard case .object(let fields) = item,
+                          case .string("message")? = fields["type"],
+                          case .string(let role)? = fields["role"] else { continue }
+                    extracted.append(["role": role, "content": Self.text(of: fields["content"] ?? .null)])
+                }
+            default:
+                break
+            }
+            messages = extracted
+            maxTokens = request.maxOutputTokens.map(Int.init)
+            temperature = request.temperature.map(Float.init)
+            topP = request.topP.map(Float.init)
+        case .google(let request):
+            var extracted: [[String: String]] = []
+            if let systemInstruction = request.systemInstruction {
+                let joined = Self.text(of: systemInstruction.parts)
+                if !joined.isEmpty { extracted.append(["role": "system", "content": joined]) }
+            }
+            for content in request.contents {
+                let role = content.role == .model ? "assistant" : "user"
+                extracted.append(["role": role, "content": Self.text(of: content.parts)])
+            }
+            messages = extracted
+            maxTokens = request.generationConfig?.maxOutputTokens.map(Int.init)
+            temperature = request.generationConfig?.temperature.map(Float.init)
+            topP = request.generationConfig?.topP.map(Float.init)
+        case .unrecognized(let kind):
+            throw ProviderError.requestInvalid(message: "Request kind \"\(kind)\" is not supported by this Switchboard SDK build.")
+        }
+    }
+
+    private static func text(of parts: [GooglePart]) -> String {
+        parts.compactMap { part -> String? in
+            guard case .text(let text) = part else { return nil }
+            return text
+        }.joined(separator: "\n")
+    }
+
+    private static func text(of content: SwitchboardJSON) -> String {
+        switch content {
+        case .string(let text):
+            return text
+        case .array(let parts):
+            return parts.compactMap { part -> String? in
+                guard case .object(let fields) = part else { return nil }
+                if case .string(let text)? = fields["text"] { return text }
                 return nil
             }.joined(separator: "\n")
+        default:
+            return ""
         }
-        return ["role": message.role.rawValue, "content": text]
     }
 }
