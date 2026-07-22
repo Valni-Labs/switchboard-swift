@@ -139,4 +139,4 @@ Most integrations need only `Switchboard`. Add `SwitchboardLocal` when you want 
 
 ## License
 
-Copyright (c) 2026 Benovi Labs, Inc. See [LICENSE](LICENSE).
+Copyright (c) 2026 Benovi Limited Company See [LICENSE](LICENSE).
